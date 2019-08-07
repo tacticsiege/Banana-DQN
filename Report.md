@@ -16,6 +16,9 @@ The following files are used for this implementation:
 
 ## DQN
 
+![DQN Algorithm](dqn_algo.png)
+*[source](arxiv.org/abs/1312.5602)*
+
 ### Experience Replay Buffer
 
 Experiences of ```(state, action, reward, next_state, done)``` tuples are observed by the agent every time step and stored in an Experience Replay Buffer. The replay buffer uses the ```buffer_size``` hyperparameter to determine how many experiences it should keep before discarding or 'forgetting' the oldest. During learning, ```batch_size``` samples are selected uniformly at random and used for the update.
