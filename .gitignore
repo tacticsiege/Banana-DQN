@@ -113,3 +113,6 @@ venv.bak/
 
 # unity environments
 Banana_Windows_x86_64/
+
+# saved agent checkpoints
+saved_agents/*/.checkpoints/

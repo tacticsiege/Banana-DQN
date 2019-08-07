@@ -9,14 +9,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from dqn_model import DQNetwork
-from replay_buffer import UniformReplayBuffer
-
-from util import env_initialize, env_reset, state_reward_done_unpack
-from util import TrainingMonitor, EpsilonService
+from dqn_model import QNetwork
 
 # default parameter values
-LAYER_SIZES = [64, 64]  # size of hidden layers for DQNetwork
+DEFAULT_NAME = 'default_dqn'
+LAYER_SIZES = [64, 64]  # size of hidden layers for QNetwork
 BUFFER_SIZE = int(1e5)  # replay buffer size
 BATCH_SIZE = 64         # minibatch size for experience sampling
 GAMMA = 0.99            # discount factor
@@ -27,42 +24,23 @@ COPY_EVERY = 4          # how often to copy weights to target network
 
 ###############################################################################
 ###############################################################################
-class DQN_Params:
-    """ Parameter set used for DQN agents. """
-    def __init__(self, name=None,
-                layers=LAYER_SIZES, buffer_size=BUFFER_SIZE, batch_size=BATCH_SIZE,
-                update_every=UPDATE_EVERY, copy_every=COPY_EVERY,
-                learning_rate=LR, gamma=GAMMA, tau=TAU):
-        # DQNetwork params
-        self.name = name
-        self.Layers = layers
-        
-        # replay buffer params
-        self.BufferSize = buffer_size
-        self.BatchSize = batch_size
-        
-        # update and copy rates
-        self.UpdateEvery = update_every
-        self.CopyEvery = copy_every
-
-        self.LearningRate = learning_rate   # learning rate (alpha)
-        self.Gamma = gamma                  # discount factor (gamma)
-        self.Tau = tau                      # copy interpolation (tau)
-    
-    def display_params(self, condensed=True):
-        p = 'h{}, exp[{}, {}], u,c[{}, {}], g,t,lr[{}, {}, {}]'.format(
-            self.Layers, self.BufferSize, self.BatchSize, self.UpdateEvery, 
-            self.CopyEvery, self.Gamma, self.Tau, self.LearningRate)
-        if condensed:
-            return p
-        # todo: nicer format and use appropriate toString/repr
-        return p
+default_params = {
+    'name':DEFAULT_NAME,
+    'layers':LAYER_SIZES,
+    'buffer_size':BUFFER_SIZE,
+    'batch_size':BATCH_SIZE,
+    'update_every':UPDATE_EVERY,
+    'copy_every':COPY_EVERY,
+    'learning_rate':LR,
+    'gamma':GAMMA,
+    'tau':TAU,
+}
 
 class DQN_Agent():
     """Interacts with and learns from the environment."""
 
-    def __init__(self, state_size, action_size, seed, 
-                    params=DQN_Params(), verbose=False, device=None):
+    def __init__(self, state_size, action_size, brain_name, seed, 
+                    params=default_params, verbose=False, device=None):
         """Initialize an Agent object.
         
         Params
@@ -71,11 +49,12 @@ class DQN_Agent():
             action_size (int): dimension of each action
             seed (int): random seed
         """
-        # implementation details and identity
-        self.device = device if device is not None else torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        params = self._fill_params(params)
         
-        self.description = 'DQN({})'.format(params.display_params())
-        self.name = params.name if params.name is not None else self.description
+        # implementation details and identity        
+        self.device = device if device is not None else torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.name = params['name']
+        self.brain_name = brain_name
 
         # set environment information
         self.state_size = state_size
@@ -83,12 +62,12 @@ class DQN_Agent():
         self.seed = random.seed(seed)
 
         # Q-Network
-        self.qnetwork_local = DQNetwork(state_size, action_size, seed, layers=params.Layers).to(self.device)
-        self.qnetwork_target = DQNetwork(state_size, action_size, seed, layers=params.Layers).to(self.device)
-        self.optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=params.LearningRate)
+        self.qnetwork_local = QNetwork(state_size, action_size, seed, layers=params['layers']).to(self.device)
+        self.qnetwork_target = QNetwork(state_size, action_size, seed, layers=params['layers']).to(self.device)
+        self.optimizer = optim.Adam(self.qnetwork_local.parameters(), lr=params['learning_rate'])
 
         # Replay memory
-        self.memory = UniformReplayBuffer(action_size, params.BufferSize, params.BatchSize, seed)
+        self.memory = ReplayBuffer(action_size, params['buffer_size'], params['batch_size'], seed)
         
         # Initialize time steps, t_step for updates, c_step for copying weights
         self.t_step = 0
@@ -96,84 +75,54 @@ class DQN_Agent():
 
         # store params for later
         self.params = params
+
+    def _fill_params(self, src_params):
+        params = {
+            'name': self._get_param_or_default('name', src_params, default_params),
+            'layers':self._get_param_or_default('layers', src_params, default_params),
+            'buffer_size':self._get_param_or_default('buffer_size', src_params, default_params),
+            'batch_size':self._get_param_or_default('batch_size', src_params, default_params),
+            'update_every':self._get_param_or_default('update_every', src_params, default_params),
+            'copy_every':self._get_param_or_default('copy_every', src_params, default_params),
+            'learning_rate':self._get_param_or_default('learning_rate', src_params, default_params),
+            'gamma':self._get_param_or_default('gamma', src_params, default_params),
+            'tau':self._get_param_or_default('tau', src_params, default_params)
+        }
+        return params
     
-    def train(self, env, n_episodes=1000, 
-              eps_start=1.0, eps_end=0.001, eps_decay=0.995,
-              print_every=100):
-        """ Train the agent on the given established environment. """
-        # monitor training progress
-        monitor = TrainingMonitor(print_every=print_every)
-        
-        # initialize epsilon
-        epsilon_svc = EpsilonService(
-            method='decay', start_value=eps_start, end_value=eps_end, 
-            decay_rate=eps_decay, n_episodes=n_episodes)
-        eps = epsilon_svc.get_value()                   
-        
-        # initialize environment and obtain info
-        brain, brain_name, state, action_size, state_size = env_initialize(env)
-        
-        # start training loop
-        monitor.start()
-        for i_episode in range(1, n_episodes+1):
-            monitor.start_episode()
-            # run episode
-            score, steps, duration = self.episode(env, brain_name, eps)
-            
-            # track and display scores
-            monitor.end_episode(i_episode, score, steps, eps)
-            # update epsilon
-            eps = epsilon_svc.update(i=i_episode)
-        
-        # finished all episodes, display results
-        scores, final_avg, total_duration = monitor.end(n_episodes=i_episode)
-        
-        # return the unpacked scores and full episode data
-        return scores, monitor.episodes
+    def _get_param_or_default(self, key, src_params, default_params):
+        if key in src_params:
+            return src_params[key]
+        else:
+            return default_params[key]
 
-    def episode(self, env, brain_name, epsilon):
-        """Run an episode. """
-        # reset the environment
-        score = 0
-        steps = 0
-        state = env_reset(env, brain_name, train_mode=True)
+    def display_params(self, force_print=False):
+        p = '{}: h{}, exp[{}, {}], u,c[{}, {}], g,t,lr[{}, {}, {}]'.format(
+            self.params['name'],
+            self.params['layers'],
+            self.params['buffer_size'], self.params['batch_size'],
+            self.params['update_every'], self.params['copy_every'],
+            self.params['gamma'], self.params['tau'],
+            self.params['learning_rate']
+        )
+        if force_print:
+            print(p)
+        return p
 
-        start_time = time.time()
-        # run episode until done
-        while True:
-            # choose and take action
-            action = int(self.act(state, epsilon))
-            env_info = env.step(action)[brain_name]
-            next_state, reward, done = state_reward_done_unpack(env_info)
-
-            # update with new state from the environment
-            self.step(state, action, reward, next_state, done)
-            score += reward
-            steps += 1
-            
-            state = next_state # update state for next timestep
-            if done:
-                break
-        
-        end_time = time.time()
-        duration = end_time - start_time
-        return score, steps, duration
-    
     def step(self, state, action, reward, next_state, done):
         # Save experience in replay memory
         self.memory.add(state, action, reward, next_state, done)
         
         # update timesteps
-        self.t_step = (self.t_step + 1) % self.params.UpdateEvery
-        self.c_step = (self.c_step + 1) % self.params.CopyEvery
+        self.t_step = (self.t_step + 1) % self.params['update_every']
+        self.c_step = (self.c_step + 1) % self.params['copy_every']
         
         # only update every params.UpdateEvery timesteps
         if self.t_step == 0:
-            # get random subset and learn, 
-            # sample < batch_size until there are enough for a full batch
-            k = min(len(self.memory), self.params.BatchSize)            
-            experiences = self.memory.sample(k=k)
-            self.learn(experiences, self.params.Gamma)
+            if len(self.memory) >= self.params['batch_size']:
+                # get random subset and learn
+                experiences = self.memory.sample()
+                self.learn(experiences, self.params['gamma'])
 
     def act(self, state, eps=0.):
         """Returns actions for given state as per current policy.
@@ -223,7 +172,7 @@ class DQN_Agent():
 
         # update the weights in the target network every c_steps
         if self.c_step == 0:
-            self.soft_update(self.qnetwork_local, self.qnetwork_target, self.params.Tau)
+            self.soft_update(self.qnetwork_local, self.qnetwork_target, self.params['tau'])
 
     def soft_update(self, local_model, target_model, tau):
         """Soft update model parameters.
@@ -237,3 +186,44 @@ class DQN_Agent():
         """
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
             target_param.data.copy_(tau*local_param.data + (1.0-tau)*target_param.data)
+
+class ReplayBuffer:
+    """ Fixed-size buffer to store experience tuples."""
+
+    def __init__(self, action_size, buffer_size, batch_size, seed, device=None):
+        """ Initialize a ReplayBuffer object.
+
+        Params
+        ======
+            action_size (int): dimension of each action
+            buffer_size (int): maximum size of buffer
+            batch_size (int): size of each training batch
+            seed (int): random seed
+        """
+        self.device = device if device is not None else torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.action_size = action_size
+        self.memory = deque(maxlen=buffer_size)  
+        self.batch_size = batch_size
+        self.experience = namedtuple("Experience", field_names=["state", "action", "reward", "next_state", "done"])
+        self.seed = random.seed(seed)
+    
+    def add(self, state, action, reward, next_state, done):
+        """ Add a new experience to memory."""
+        e = self.experience(state, action, reward, next_state, done)
+        self.memory.append(e)
+    
+    def sample(self):
+        """ Randomly sample a batch of experiences from memory."""
+        experiences = random.sample(self.memory, k=self.batch_size)
+
+        states = torch.from_numpy(np.vstack([e.state for e in experiences if e is not None])).float().to(self.device)
+        actions = torch.from_numpy(np.vstack([e.action for e in experiences if e is not None])).long().to(self.device)
+        rewards = torch.from_numpy(np.vstack([e.reward for e in experiences if e is not None])).float().to(self.device)
+        next_states = torch.from_numpy(np.vstack([e.next_state for e in experiences if e is not None])).float().to(self.device)
+        dones = torch.from_numpy(np.vstack([e.done for e in experiences if e is not None]).astype(np.uint8)).float().to(self.device)
+  
+        return (states, actions, rewards, next_states, dones)
+
+    def __len__(self):
+        """ Return the current size of internal memory."""
+        return len(self.memory)

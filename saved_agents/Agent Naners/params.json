@@ -1,0 +1,1 @@
+{"name": "Agent Naners", "layers": [32, 32], "buffer_size": 100000, "batch_size": 64, "update_every": 4, "copy_every": 8, "learning_rate": 0.0005, "gamma": 0.99, "tau": 0.001}

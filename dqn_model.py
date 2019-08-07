@@ -1,10 +1,12 @@
 import numpy as np
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-class DQNetwork(nn.Module):
+class QNetwork(nn.Module):
     """ Actor (Policy) Model. """
 
     def __init__(self, state_size, action_size, seed, layers=[64, 64]):
@@ -16,7 +18,7 @@ class DQNetwork(nn.Module):
             seed (int): Random seed
             layers [(int)]: number of nodes for each hidden layer
         """
-        super(DQNetwork, self).__init__()
+        super(QNetwork, self).__init__()
         self.seed = torch.manual_seed(seed)
         self.input_layer = nn.Linear(state_size, layers[0])
         
@@ -28,12 +30,9 @@ class DQNetwork(nn.Module):
 
     def forward(self, state):
         """ Forward pass to map state -> action values."""
-        # state input to network and ReLU activation
         x = F.relu(self.input_layer(state))
         
-        # pass through hidden layers with ReLU activations
         for layer in self.hidden:
             x = F.relu(layer(x))
 
-        # return action vector without activation    
         return self.out_layer(x)
