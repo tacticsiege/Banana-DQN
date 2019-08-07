@@ -62,7 +62,7 @@ Additionally you'll need to download the Unity Environment solved in this projec
 3. Install project dependencies:
 
     ``` bash
-    cd .python/
+    cd python/
     pip install .
     cd ..
     ```
