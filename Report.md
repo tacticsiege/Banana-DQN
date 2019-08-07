@@ -1,4 +1,4 @@
-# Banana-Nav Report: Agent Naners
+# Banana-DQN Report: Agent Naners
 
 To solve this environment a Deep Q-learning Network (DQN) was used for the agent with very few modifications. Briefly, the DQN agent architecture consists of two neural networks to learn from experience, and a replay buffer to store experiences that are sampled from during learning.
 
@@ -26,7 +26,7 @@ When copying the weights of the local network to the target network every ```cop
 
 ## Network Architecture
 
-Rather than using convolutional neural networks for processing raw pixel data as described in [Ref_DQN], multi-layer perceptron networks were sufficient enough for the agent to learn the lower dimensional state space in this environment.
+Rather than using convolutional neural networks for processing raw pixel data as described in the DQN paper, multi-layer perceptron networks were sufficient enough for the agent to learn the lower dimensional state space in this environment.
 
 The neural network used for the agent uses a linear input layer the same size as the state space, ```37```. The implementation uses a RLeU activation before the hidden layers.
 

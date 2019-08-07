@@ -1,4 +1,4 @@
-# Banana-Nav
+# Banana-DQN
 
 This project trains an AI controlled agent to navigate a 3D environment to collect yellow bananas, and avoid the much-hated-by-AI blue bananas. The agent uses a Deep Q-learning Network (DQN) and learns by interacting with the environment, without prior knowledge or any hand crafted banana specific code.
 
@@ -39,8 +39,8 @@ Additionally you'll need to download the Unity Environment solved in this projec
 1. clone the repository:
 
     ``` bash
-    git clone https://github.com/TacticSiege/<Project>
-    cd <Project>
+    git clone https://github.com/TacticSiege/Banana-DQN
+    cd Banana-DQN
     ```
 
 2. Create a virtualenv with Anaconda and activate it:
@@ -71,10 +71,10 @@ Additionally you'll need to download the Unity Environment solved in this projec
 
     | Operating System | Link |
     |------------------|------|
-    | Windows (32bit) | link... |
-    | Windows (64bit) | link... |
-    | MacOS | link... |
-    | Linux | link... |
+    | Windows (32bit) | [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P1/Banana/Banana_Windows_x86.zip) |
+    | Windows (64bit) | [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P1/Banana/Banana_Windows_x86_64.zip) |
+    | MacOS | [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P1/Banana/Banana.app.zip) |
+    | Linux | [click here](https://s3-us-west-1.amazonaws.com/udacity-drlnd/P1/Banana/Banana_Linux.zip) |
 
     Extract the archive into the project directory, or you may update the ```env_path``` in the notebook(s) to use a custom directory.
 
